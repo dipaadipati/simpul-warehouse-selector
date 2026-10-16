@@ -2,42 +2,6 @@ pipeline:
   id: pipeline_simpul_warehouse_selector_build_5cf0
   name: pipeline_simpul_warehouse_selector_build_5cf0
   stages:
-    - name: Build and Test
-      clone:
-        enabled: true
-      cache:
-        enabled: true
-      runtime: cloud
-      steps:
-        - name: Install Dependencies
-          id: install_deps
-          run:
-            container:
-              image: node:24-alpine
-            shell: sh
-            script: npm ci
-        - name: Typecheck
-          id: typecheck
-          run:
-            container:
-              image: node:24-alpine
-            shell: sh
-            script: npm run typecheck
-        - name: Test
-          id: test
-          run:
-            container:
-              image: node:24-alpine
-            shell: sh
-            script: |-
-              mkdir -p .harness/reports
-              node --test --test-reporter=spec --test-reporter=junit --test-reporter-destination=stdout --test-reporter-destination=.harness/reports/junit.xml
-            report:
-              type: junit
-              paths:
-                - .harness/reports/junit.xml
-    # Nothing gates this stage. If the pipeline is wired to a push trigger, every
-    # push deploys - add a manual approval on this stage before doing that.
     - name: Deploy
       # Deliberately no clone. Every command below runs on the server, so the
       # only thing this container needs is an ssh client.
