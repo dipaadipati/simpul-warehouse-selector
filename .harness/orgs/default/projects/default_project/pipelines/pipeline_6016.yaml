@@ -1,0 +1,107 @@
+pipeline:
+  id: pipeline_simpul_warehouse_selector_build_5cf0
+  name: pipeline_simpul_warehouse_selector_build_5cf0
+  stages:
+    - name: Build and Test
+      clone:
+        enabled: true
+      cache:
+        enabled: true
+      runtime: cloud
+      steps:
+        - name: Install Dependencies
+          id: install_deps
+          run:
+            container:
+              image: node:24-alpine
+            shell: sh
+            script: npm ci
+        - name: Typecheck
+          id: typecheck
+          run:
+            container:
+              image: node:24-alpine
+            shell: sh
+            script: npm run typecheck
+        - name: Test
+          id: test
+          run:
+            container:
+              image: node:24-alpine
+            shell: sh
+            script: |-
+              mkdir -p .harness/reports
+              node --test --test-reporter=spec --test-reporter=junit --test-reporter-destination=stdout --test-reporter-destination=.harness/reports/junit.xml
+            report:
+              type: junit
+              paths:
+                - .harness/reports/junit.xml
+    # Nothing gates this stage. If the pipeline is wired to a push trigger, every
+    # push deploys - add a manual approval on this stage before doing that.
+    - name: Deploy
+      # Deliberately no clone. Every command below runs on the server, so the
+      # only thing this container needs is an ssh client.
+      runtime: cloud
+      steps:
+        - name: Deploy over SSH
+          id: deploy
+          run:
+            container:
+              image: alpine:3.20
+            shell: sh
+            script: |-
+              set -eu
+
+              # Not node:24-alpine like the stage above. The deploy needs a shell
+              # and an ssh client, not a JavaScript runtime, and the tests that
+              # decide whether this runs at all already ran in the first stage.
+              apk add --no-cache openssh-client >/dev/null
+
+              KEY=/tmp/deploy_key
+              printf '%s\n' "<+secrets.getValue("vps_ssh_key")>" > "$KEY"
+              chmod 600 "$KEY"
+
+              # A secret that failed to resolve is left in the script verbatim,
+              # so the file would hold "<+secrets.getValue(...)>" rather than a
+              # key. Fail here, where the reason is legible, instead of letting
+              # ssh report "error in libcrypto" twenty lines further down.
+              if [ "$(head -c 11 "$KEY")" != "-----BEGIN " ]; then
+                echo "vps_ssh_key did not resolve to a private key."
+                echo "It must hold the whole PEM, the BEGIN and END lines included."
+                exit 1
+              fi
+
+              # No -p: a secret that does not exist resolves to the literal
+              # expression, and ssh would then be handed "<+secrets.getValue...>"
+              # as a port number. Add -p here if the server is not on 22.
+              #
+              # accept-new trusts the host key on the first run and refuses a
+              # changed one afterwards, so this cannot be silently redirected.
+              # BatchMode stops an unseen prompt from hanging the pipeline.
+              ssh -i "$KEY" \
+                  -o StrictHostKeyChecking=accept-new \
+                  -o UserKnownHostsFile=/tmp/known_hosts \
+                  -o BatchMode=yes \
+                  "<+secrets.getValue("vps_user")>@<+secrets.getValue("vps_host")>" bash -s <<'REMOTE'
+              set -eu
+              cd "<+secrets.getValue("vps_app_dir")>"
+
+              echo "--- fetching ---"
+              git fetch --prune origin
+              # origin/HEAD rather than a branch name: this checkout's default
+              # branch is master, and hardcoding one here is a deploy that fails
+              # on the day the repository is renamed.
+              git remote set-head origin --auto >/dev/null
+              # --hard discards any edit made on the server, which is the point of
+              # a deploy target. It does not touch ignored files, so the delivery
+              # log in data/ survives.
+              git reset --hard origin/HEAD
+              echo "now at $(git rev-parse --short HEAD)"
+
+              # Everything past this line is deploy/deploy.sh, not a copy of it,
+              # so this stage, the GitHub workflow and a person at a terminal all
+              # run the same steps.
+              bash deploy/deploy.sh
+              REMOTE
+  tags:
+    onboarding: "true"
