@@ -143,6 +143,11 @@ test("a refusal caused by the policy says so and offers the other policy", () =>
   assert.match(text, /108 exist .*\(158 under the "storage-only" policy\)/);
   assert.match(text, /short of cold-chain capacity/);
 
+  // The covering plan belongs to alternativePolicy, which the page renders as
+  // its own callout. Naming the warehouses and the distance in the steps as well
+  // printed the same sentence twice, one line apart, on the refusal page.
+  assert.doesNotMatch(text, /W02 \+ W04 \+ W06 \+ W07 \+ W08 at 332 km/);
+
   // The same refusal where no policy would help must not invent an alternative.
   const hopeless = selectWarehouses([{ productId: "P002", quantity: 500 }]);
   assert.equal(hopeless.explanation.alternativePolicy, undefined);

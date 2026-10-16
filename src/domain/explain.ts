@@ -209,10 +209,12 @@ export function buildUnfulfillableExplanation(
       summary: describePlan(alternative.plan),
       sameAsChosen: false,
     };
+    // The plan itself is deliberately not repeated here. The page renders
+    // alternativePolicy directly underneath as its own callout, and printing the
+    // same five warehouses and the same 332 km in both places reads like a page
+    // that was assembled rather than written.
     steps.push(
-      `This order is not short of stock, it is short of cold-chain capacity: under the "${alternative.policy}" policy it can be covered, by ${describePlan(
-        alternative.plan,
-      )}. Nothing is shipped here because "${policy}" is in force.`,
+      `This order is not short of stock, it is short of cold-chain capacity: the "${alternative.policy}" policy can cover it. Nothing is shipped here because "${policy}" is in force.`,
     );
   }
 
