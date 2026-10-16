@@ -29,6 +29,9 @@ const publicDir = join(here, "..", "..", "public");
 /** Small enough that a stray large body cannot tie up the process. */
 const MAX_BODY_BYTES = 64 * 1024;
 
+/** The health check's whole body, kept here so its length is not a second literal. */
+const HEALTH = "ok";
+
 /** The fields the order endpoint reads. Anything else is a typo, not a hint. */
 const ORDER_FIELDS = ["items", "policy", "objective", "departAt"];
 
@@ -180,8 +183,15 @@ export function createApp() {
       const reads = req.method === "GET" || req.method === "HEAD";
 
       if (reads && path === "/healthz") {
-        res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-        res.end("ok");
+        // The length is stated rather than left to Node, which would otherwise
+        // frame this one with chunked encoding on GET and with nothing at all on
+        // HEAD, where there is no body to chunk. Stating it makes the two header
+        // sets identical, which is what a HEAD is supposed to return.
+        res.writeHead(200, {
+          "content-type": "text/plain; charset=utf-8",
+          "content-length": Buffer.byteLength(HEALTH),
+        });
+        res.end(HEALTH);
         return;
       }
       if (reads && path === "/api/catalog") {
