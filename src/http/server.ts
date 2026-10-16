@@ -29,6 +29,23 @@ const publicDir = join(here, "..", "..", "public");
 /** Small enough that a stray large body cannot tie up the process. */
 const MAX_BODY_BYTES = 64 * 1024;
 
+/** The fields the order endpoint reads. Anything else is a typo, not a hint. */
+const ORDER_FIELDS = ["items", "policy", "objective", "departAt"];
+
+/**
+ * Which method each path answers. Consulted only by the fallback, so that a path
+ * that exists under another method answers 405 instead of 404: the caller has
+ * the URL right and the verb wrong, and "no route" sends them looking for a
+ * missing endpoint rather than reading the one line that would fix it.
+ */
+const METHODS: Record<string, string> = {
+  "/healthz": "GET",
+  "/api/catalog": "GET",
+  "/api/orders": "POST",
+  "/": "GET",
+  "/index.html": "GET",
+};
+
 const json = (res: ServerResponse, status: number, body: unknown) => {
   const payload = JSON.stringify(body, null, 2);
   res.writeHead(status, {
@@ -66,6 +83,18 @@ async function handleOrder(req: IncomingMessage, res: ServerResponse) {
 
   if (typeof parsed !== "object" || parsed === null) {
     json(res, 400, { error: "body must be a JSON object" });
+    return;
+  }
+
+  // Refused rather than ignored. A caller who writes {"day": "Mon"} at the top
+  // level gets an answer identical to one who sent nothing, and no way to tell
+  // the difference from the outside: the field looks accepted because the
+  // request succeeded. That is a slow way to find a typo.
+  const unknown = Object.keys(parsed).filter((key) => !ORDER_FIELDS.includes(key));
+  if (unknown.length > 0) {
+    json(res, 400, {
+      error: `unknown field${unknown.length > 1 ? "s" : ""} ${unknown.join(", ")}; this endpoint reads ${ORDER_FIELDS.join(", ")}`,
+    });
     return;
   }
 
@@ -152,16 +181,17 @@ export function createApp() {
         });
         return;
       }
-      if (path === "/api/orders") {
-        if (req.method !== "POST") {
-          json(res, 405, { error: "use POST for /api/orders" });
-          return;
-        }
+      if (req.method === "POST" && path === "/api/orders") {
         await handleOrder(req, res);
         return;
       }
       if (req.method === "GET" && (path === "/" || path === "/index.html")) {
         await handlePage(res);
+        return;
+      }
+      const allowed = METHODS[path];
+      if (allowed) {
+        json(res, 405, { error: `use ${allowed} for ${path}` });
         return;
       }
       json(res, 404, { error: `no route for ${req.method} ${path}` });

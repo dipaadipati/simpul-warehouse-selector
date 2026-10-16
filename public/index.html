@@ -43,6 +43,11 @@
   h2 { font-size: 14px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
   .lede { color: var(--muted); margin: 0; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  /* A grid item refuses to shrink below its own min-content width, and the JSON
+     in "Decision details" is one unbroken 1950px line, so opening that panel used
+     to widen the whole page and give it a horizontal scrollbar. The <pre> already
+     has overflow-x: auto; this is what lets it take effect. */
+  #result { min-width: 0; }
   table { width: 100%; border-collapse: collapse; }
   th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; padding: 0 8px 8px 0; }
   td { padding: 7px 8px 7px 0; border-top: 1px solid var(--border); vertical-align: middle; }
@@ -137,7 +142,7 @@
         <label for="depart-day" class="lede">Departing</label>
         <select id="depart-day" aria-label="Departure day"><option value="">any time</option></select>
         <select id="depart-hour" aria-label="Departure hour"><option value="">any time</option></select>
-        <span class="lede">Leave both on "any time" to use the all-day median instead.</span>
+        <span id="depart-hint" class="lede"></span>
       </div>
     </section>
 
@@ -201,6 +206,26 @@ function readDeparture() {
   const day = $("depart-day").value;
   const hour = $("depart-hour").value;
   return day && hour !== "" ? { day, hour: Number(hour) } : undefined;
+}
+
+/**
+ * The API takes a departure as one value, {day, hour}, or not at all. Two
+ * independent selects invited the reader to set a day and leave the hour on
+ * "any time", and the day was then dropped without a word - the answer came back
+ * unchanged and nothing on screen said why. Keeping the pair both-or-neither
+ * makes that state unreachable instead of merely documented.
+ */
+function syncDeparture() {
+  const day = $("depart-day").value;
+  const hour = $("depart-hour").value;
+  $("depart-hour").disabled = day === "";
+  $("depart-day").disabled = hour !== "";
+  $("depart-hint").textContent =
+    day === ""
+      ? 'Leave both on "any time" for the all-day median, or pick a day to add an hour.'
+      : hour === ""
+        ? "Now pick an hour - a day on its own is not a departure time."
+        : 'Set the hour back to "any time" to clear the departure time.';
 }
 
 function readOrder() {
@@ -322,7 +347,17 @@ function inputsChanged() {
   if (!$("submit").disabled) $("status").textContent = "";
   if (!$("result").classList.contains("hidden") && !$("submit").disabled) $("order-form").requestSubmit();
 }
-$("order-form").addEventListener("change", inputsChanged);
+$("order-form").addEventListener("change", () => {
+  syncDeparture();
+  inputsChanged();
+});
+
+// The complaint goes as soon as the reader starts fixing the input it names. The
+// re-run above still waits for the value to settle: a request per keystroke
+// would be a lot of latency to spend on an intermediate number.
+$("order-form").addEventListener("input", () => {
+  if (!$("submit").disabled) $("status").textContent = "";
+});
 
 $("order-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -377,6 +412,7 @@ $("clear").addEventListener("click", () => {
   $("status").textContent = "";
 });
 
+syncDeparture();
 loadCatalog().catch((error) => { $("status").textContent = "Could not load catalog: " + error.message; });
 </script>
 </body>
