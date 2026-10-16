@@ -172,10 +172,16 @@ export function createApp() {
   });
 }
 
-if (import.meta.filename === process.argv[1]) {
-  const port = Number(process.env.PORT ?? 3000);
-  const host = process.env.HOST ?? "0.0.0.0";
-  createApp().listen(port, host, () => {
-    console.log(`warehouse selector listening on http://${host}:${port}`);
-  });
-}
+// No "am I the entrypoint?" guard here, deliberately. PM2 loads this file
+// through its own ProcessContainerFork, so process.argv[1] names that container
+// and not this file - a guard comparing the two starts nothing at all, and the
+// process sits there online with no listener and an empty log. The first
+// version of this file had that guard and deployed exactly that way.
+//
+// createApp stays exported for anything that wants the request handler without
+// the listener.
+const port = Number(process.env.PORT ?? 3000);
+const host = process.env.HOST ?? "0.0.0.0";
+createApp().listen(port, host, () => {
+  console.log(`warehouse selector listening on http://${host}:${port}`);
+});
