@@ -1,0 +1,13 @@
+# Notes for running this in a container.
+#
+# The delivery log is deliberately excluded. It is the company's data, it is not
+# in the repository, and baking it into an image would ship it everywhere the
+# image goes. Mount it at run time instead.
+.git
+node_modules
+BRIEF.md
+README.md
+customer1-historical.csv
+data
+.playwright-mcp
+*.log
