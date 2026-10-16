@@ -11,7 +11,8 @@
     "start": "node src/http/server.ts",
     "dev": "node --watch src/http/server.ts",
     "test": "node --test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bonus": "node src/bonus/report.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

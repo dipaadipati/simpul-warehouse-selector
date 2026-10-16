@@ -16,8 +16,12 @@ import {
   describeCatalog,
   isColdChainPolicy,
   selectWarehouses,
+  travelObjectiveAvailable,
   validateOrder,
 } from "../domain/select.ts";
+import type { Objective } from "../domain/select.ts";
+import { DAYS } from "../bonus/history.ts";
+import { isDepartureTime } from "../bonus/travel.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(here, "..", "..", "public");
@@ -65,7 +69,12 @@ async function handleOrder(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  const { items, policy } = parsed as { items?: unknown; policy?: unknown };
+  const { items, policy, objective, departAt } = parsed as {
+    items?: unknown;
+    policy?: unknown;
+    objective?: unknown;
+    departAt?: unknown;
+  };
 
   const problems = validateOrder(items);
   if (problems.length > 0) {
@@ -76,10 +85,35 @@ async function handleOrder(req: IncomingMessage, res: ServerResponse) {
     json(res, 400, { error: `policy must be one of ${COLD_CHAIN_POLICIES.join(", ")}` });
     return;
   }
+  if (objective !== undefined && objective !== "distance" && objective !== "minutes") {
+    json(res, 400, { error: 'objective must be "distance" or "minutes"' });
+    return;
+  }
+  if (departAt !== undefined && !isDepartureTime(departAt)) {
+    json(res, 400, {
+      error: `departAt must be {day, hour} with day one of ${DAYS.join(", ")} and hour a whole number 0-23`,
+    });
+    return;
+  }
+  // Better a plain 400 than the RangeError from the domain, which the catch-all
+  // below would report as a server fault.
+  if (objective === "minutes" && !travelObjectiveAvailable()) {
+    json(res, 400, {
+      error: 'the "minutes" objective needs the historical delivery log, which is not deployed here; use "distance"',
+    });
+    return;
+  }
 
   // A decision, even "we cannot fulfil this", is a successful answer with an
   // explanation attached, so it goes back as 200 with feasible:false.
-  json(res, 200, selectWarehouses(items as { productId: string; quantity: number }[], policy ?? DEFAULT_POLICY));
+  json(
+    res,
+    200,
+    selectWarehouses(items as { productId: string; quantity: number }[], policy ?? DEFAULT_POLICY, {
+      objective: objective as Objective | undefined,
+      departAt,
+    }),
+  );
 }
 
 async function handlePage(res: ServerResponse) {
@@ -112,6 +146,9 @@ export function createApp() {
           ...describeCatalog(),
           policies: COLD_CHAIN_POLICIES,
           defaultPolicy: DEFAULT_POLICY,
+          objectives: ["distance", "minutes"],
+          travelObjectiveAvailable: travelObjectiveAvailable(),
+          days: DAYS,
         });
         return;
       }

@@ -14,7 +14,7 @@ import type { Warehouse } from "./catalog.ts";
 import { canCarry, isColdChainCapable, policyText } from "./policy.ts";
 import type { ColdChainPolicy } from "./policy.ts";
 import { combinationCount, describePlan, warehouseLabel } from "./plan.ts";
-import type { OrderLine, Plan } from "./plan.ts";
+import type { Objective, OrderLine, Plan } from "./plan.ts";
 
 export type RejectionCode =
   /** Stocks a cold-chain line from this order, but has no cold storage at all. */
@@ -41,6 +41,18 @@ export interface Unfilled {
   qtyAvailable: number;
 }
 
+/**
+ * Present only when the order was optimised for predicted travel time rather
+ * than for kilometres, which is the bonus path. The measurement lines carry
+ * their own sample sizes so a one-delivery reading cannot pass for a trend.
+ */
+export interface ObjectiveNote {
+  objective: Objective;
+  minutes: number;
+  measurements: string[];
+  caveat: string;
+}
+
 export interface Explanation {
   summary: string;
   policy: string;
@@ -60,6 +72,7 @@ export function buildRejections(
   demand: readonly OrderLine[],
   plan: Plan,
   policy: ColdChainPolicy,
+  objective: Objective = "distance",
 ): Rejection[] {
   const used = new Set(plan.used.map((w) => w.id));
   const out: Rejection[] = [];
@@ -94,8 +107,11 @@ export function buildRejections(
         ? {
             warehouseId: warehouse.id,
             code: "not-needed",
-            reason:
-              "Eligible and stocked, but not needed: the chosen set covers the order in fewer shipments at a shorter total distance.",
+            // Worded against the objective actually used, so a plan chosen for
+            // being quickest is never described as the shortest.
+            reason: `Eligible and stocked, but not needed: the chosen set covers the order in fewer shipments${
+              objective === "minutes" ? ", and is quicker overall." : " at a shorter total distance."
+            }`,
           }
         : {
             warehouseId: warehouse.id,
@@ -158,6 +174,7 @@ export function buildExplanation(
   policy: ColdChainPolicy,
   plan: Plan,
   alternativePlan: Plan | null,
+  objectiveNote?: ObjectiveNote,
 ): Explanation {
   const coldProducts = demand.map((l) => productById(l.productId)!).filter((p) => p.coldChain);
 
@@ -176,7 +193,9 @@ export function buildExplanation(
   }
 
   steps.push(
-    `Searched all ${combinationCount()} non-empty warehouse combinations. Fewest shipments wins first, then least total distance. Best: ${describePlan(plan)}.`,
+    `Searched all ${combinationCount()} non-empty warehouse combinations. Fewest shipments wins first, then least ${
+      objectiveNote ? "predicted travel time" : "total distance"
+    }. Best: ${describePlan(plan)}.`,
   );
 
   for (const warehouse of plan.used) {
@@ -188,6 +207,14 @@ export function buildExplanation(
       .map((line) => `${plan.lines.get(line.productId)!.get(warehouse.id)!} x ${line.productId}`)
       .join("; ");
     steps.push(`${warehouseLabel(warehouse)} has ${capability}. Ships ${shipped}.`);
+  }
+
+  if (objectiveNote) {
+    steps.push(
+      `Chosen on predicted travel time rather than kilometres: ${objectiveNote.minutes} minutes in total for this plan. Each figure is measured from the delivery log.`,
+      ...objectiveNote.measurements,
+      objectiveNote.caveat,
+    );
   }
 
   let alternativePolicy: Explanation["alternativePolicy"];

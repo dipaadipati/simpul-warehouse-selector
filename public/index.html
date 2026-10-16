@@ -50,7 +50,8 @@
     color: var(--text); background: var(--bg);
     border: 1px solid var(--border); border-radius: 7px;
   }
-  input[type=number]:focus-visible, button:focus-visible, label.opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+  select { padding: 7px 9px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 7px; }
+  input[type=number]:focus-visible, button:focus-visible, select:focus-visible, label.opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
   .pid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--muted); }
   .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
   .tag.cold { border-color: var(--accent); color: var(--accent); }
@@ -118,6 +119,26 @@
       </label>
     </fieldset>
 
+    <section id="objective-block" class="hidden">
+      <h2 style="margin-top:24px">Rank by</h2>
+      <fieldset id="objective-options">
+        <label class="opt">
+          <input type="radio" name="objective" value="distance" checked>
+          <span><b>Total distance</b><span>The default. Assumes a kilometre costs the same everywhere.</span></span>
+        </label>
+        <label class="opt">
+          <input type="radio" name="objective" value="minutes">
+          <span><b>Predicted travel time</b><span>Learned from the delivery history. Measured per warehouse and time of day, and it does not always agree with distance.</span></span>
+        </label>
+      </fieldset>
+      <div class="actions">
+        <label for="depart-day" class="lede">Departing</label>
+        <select id="depart-day" aria-label="Departure day"><option value="">any time</option></select>
+        <select id="depart-hour" aria-label="Departure hour"><option value="">-</option></select>
+        <span class="lede">Leave both on "any time" to use the all-day median instead.</span>
+      </div>
+    </section>
+
     <div class="actions">
       <button type="submit" class="primary" id="submit">Find warehouse</button>
       <button type="button" id="example">Load example</button>
@@ -141,8 +162,7 @@ const el = (tag, props = {}, ...kids) => {
 
 async function loadCatalog() {
   catalog = await (await fetch("/api/catalog")).json();
-  const rows = $("product-rows");
-  rows.replaceChildren(
+  const rows = $("product-rows");  rows.replaceChildren(
     ...catalog.products.map((p) =>
       el("tr", {},
         el("td", {},
@@ -156,6 +176,26 @@ async function loadCatalog() {
       ),
     ),
   );
+
+  // The travel-time objective only makes sense where the delivery log is
+  // deployed, and it is not part of the repository, so the control is hidden
+  // rather than offered and then refused.
+  if (catalog.travelObjectiveAvailable) {
+    $("objective-block").classList.remove("hidden");
+    $("depart-day").append(...catalog.days.map((day) => el("option", { value: day, textContent: day })));
+    $("depart-hour").append(
+      ...Array.from({ length: 24 }, (_, hour) =>
+        el("option", { value: String(hour), textContent: String(hour).padStart(2, "0") + ":00" }),
+      ),
+    );
+  }
+}
+
+/** Both selects, or neither: a day without an hour is not a departure time. */
+function readDeparture() {
+  const day = $("depart-day").value;
+  const hour = $("depart-hour").value;
+  return day && hour !== "" ? { day, hour: Number(hour) } : undefined;
 }
 
 function readOrder() {
@@ -185,6 +225,10 @@ function renderResult(result) {
         el("div", { className: "metric" }, el("span", { textContent: "Total distance" }), el("strong", { textContent: result.totalDistanceKm + " km" })),
         el("div", { className: "metric" }, el("span", { textContent: "Policy" }),
           el("strong", { textContent: result.policy.coldChain })),
+        ...(result.estimatedMinutes === undefined ? [] : [
+          el("div", { className: "metric" }, el("span", { textContent: "Predicted travel time" }),
+            el("strong", { textContent: result.estimatedMinutes + " min" })),
+        ]),
       ),
     );
 
@@ -261,13 +305,19 @@ $("order-form").addEventListener("submit", async (event) => {
     return;
   }
   const policy = new FormData(event.currentTarget).get("policy") || catalog.defaultPolicy;
+  const payload = { items, policy };
+  if (!$("objective-block").classList.contains("hidden")) {
+    payload.objective = new FormData(event.currentTarget).get("objective") || "distance";
+    const departAt = readDeparture();
+    if (departAt) payload.departAt = departAt;
+  }
   $("submit").disabled = true;
   $("status").textContent = "Working...";
   try {
     const response = await fetch("/api/orders", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ items, policy }),
+      body: JSON.stringify(payload),
     });
     const body = await response.json();
     $("status").textContent = "";

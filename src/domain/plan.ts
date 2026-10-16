@@ -82,23 +82,38 @@ function planForSubset(
   return { used, lines, totalDistanceKm: used.reduce((sum, w) => sum + w.distanceKm, 0) };
 }
 
-/** Fewest shipments, then least distance, then lowest ids so ties are settled. */
-function betterThan(a: Plan, b: Plan): boolean {
+/**
+ * How expensive a candidate plan is, once the shipment count has been settled.
+ * Distance is the default. The optional travel-time objective swaps in here
+ * without touching the search itself, which is the whole point of keeping it a
+ * parameter: one comparator changes and nothing else does.
+ */
+export type Objective = "distance" | "minutes";
+
+export type Cost = (plan: Plan) => number;
+
+export const distanceCost: Cost = (plan) => plan.totalDistanceKm;
+
+/** Fewest shipments, then least cost, then lowest ids so ties are settled. */
+function betterThan(a: Plan, b: Plan, cost: Cost): boolean {
   if (a.used.length !== b.used.length) return a.used.length < b.used.length;
-  if (a.totalDistanceKm !== b.totalDistanceKm) return a.totalDistanceKm < b.totalDistanceKm;
+  const costA = cost(a);
+  const costB = cost(b);
+  if (costA !== costB) return costA < costB;
   return a.used.map((w) => w.id).join() < b.used.map((w) => w.id).join();
 }
 
 export function findPlan(
   demand: readonly OrderLine[],
   policy: ColdChainPolicy,
+  cost: Cost = distanceCost,
 ): Plan | null {
   let best: Plan | null = null;
   const limit = 1 << WAREHOUSES.length;
   for (let mask = 1; mask < limit; mask++) {
     const subset = WAREHOUSES.filter((_, i) => (mask & (1 << i)) !== 0);
     const plan = planForSubset(demand, subset, policy);
-    if (plan && (best === null || betterThan(plan, best))) best = plan;
+    if (plan && (best === null || betterThan(plan, best, cost))) best = plan;
   }
   return best;
 }
