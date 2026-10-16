@@ -8,11 +8,17 @@
  * fixed cost everywhere; the log says the cost varies by roughly a factor of
  * five. Run `npm run bonus` for the current table.
  *
- * The time-of-day effect is not a simple multiplier either. On the weekend the
- * near-city warehouses get much faster while the Malang ones get slower, which
- * matches the notes in the log about weekend travel to and from Malang. A
- * single pooled ratio cancels those two effects out and lands near 1, hiding
- * both. So the per-warehouse-per-slot figure is preferred wherever it exists.
+ * The time-of-day effect is not a simple multiplier either, and the honest version
+ * of it is narrower than the first draft claimed. What the log supports is the
+ * hour: readings inside the rush window (before 10:00, from 15:00) have a much
+ * higher median than readings outside it. An earlier draft described this as a
+ * weekend effect, on the grounds that the near-city warehouses look faster on
+ * Saturdays and the Malang ones slower. That reading does not survive inspection:
+ * most of the weekend readings sit in the quiet midday window, so "weekend" and
+ * "quiet hour" are confounded, and each per-warehouse weekend figure rests on one
+ * or two readings. The buckets are still the right granularity for estimating a
+ * departure - they are the best thing 38 records can support - but the weekend
+ * bucket is an hour-of-day bucket that happens to be labelled by day.
  *
  * Confidence is reported alongside every estimate, because 38 records spread
  * over 8 warehouses and 4 slots is thin. Several slots hold a single

@@ -160,10 +160,12 @@ export function summariseByWarehouse(records: readonly DeliveryRecord[]): Map<st
 
 /**
  * How much slower each slot is than average, pooled across every warehouse.
- * A blunt instrument, and deliberately reported as a fallback only: the effect
- * runs in opposite directions for the Surabaya warehouses and the Malang ones,
- * so a pooled ratio is exactly the number you should not use when the
- * per-warehouse figure exists.
+ *
+ * Reported as a fallback only, and read with care. The buckets mix day-of-week
+ * with hour-of-day: most weekend readings in this log fall in the quiet midday
+ * window, so the weekend ratio is largely an hour-of-day ratio wearing a
+ * different label. With 38 readings the two cannot be separated, and a pooled
+ * figure that averages them describes no particular warehouse.
  */
 export function pooledBucketRatios(records: readonly DeliveryRecord[]): Record<Bucket, number> {
   const overall = median(records.map((r) => r.minutes));

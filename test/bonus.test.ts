@@ -110,7 +110,7 @@ test("summariseByWarehouse keeps per-slot figures apart", () => {
   assert.equal(history.byBucket.weekend, undefined);
 });
 
-test("a pooled slot ratio hides effects that run in opposite directions", () => {
+test("a pooled slot ratio describes no particular warehouse", () => {
   const records = [
     rec("1", "W01", 40, "Mon", 8),
     rec("2", "W01", 10, "Sat", 8),
@@ -119,9 +119,10 @@ test("a pooled slot ratio hides effects that run in opposite directions", () => 
   ];
   const ratios = pooledBucketRatios(records);
 
-  // The near warehouse speeds up fourfold at the weekend and the far one is
-  // far slower, so the pooled figures land either side of 1 and neither
-  // describes a warehouse. That is the argument for per-warehouse-per-slot.
+  // One warehouse speeds up fourfold and the other is far slower, so the pooled
+  // weekend figure lands far from both. This is a property of pooling, and it is
+  // why the report caps how much it reads into the pooled numbers rather than
+  // treating them as a finding - see the sample sizes in the per-warehouse table.
   assert.ok(ratios.weekend > 1, `expected a weekend effect, got ${ratios.weekend}`);
   const near = summariseByWarehouse(records).get("W01")!;
   assert.equal(near.byBucket.weekend!.medianMinutes / near.byBucket["weekday-am"]!.medianMinutes, 0.25);

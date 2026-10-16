@@ -19,7 +19,7 @@ import {
   pooledBucketRatios,
   summariseByWarehouse,
 } from "./history.ts";
-import type { Bucket, Day } from "./history.ts";
+import type { Bucket, Day, DeliveryRecord } from "./history.ts";
 import { createTravelModel } from "./travel.ts";
 
 const pad = (value: string | number, width: number) => String(value).padStart(width);
@@ -98,32 +98,53 @@ function main() {
   );
 
   const ratios = pooledBucketRatios(records);
-  console.log("\nTime-of-day effect, pooled across warehouses");
+  console.log("\nTime of day, pooled across warehouses");
   console.log(`${end("slot", 14)}${pad("readings", 10)}${pad("pooled ratio", 14)}`);
   for (const bucket of BUCKETS) {
     const inBucket = records.filter((r) => bucketFor(r.day, r.hour) === bucket);
     console.log(`${end(bucket, 14)}${pad(inBucket.length, 10)}${pad(ratios[bucket].toFixed(2), 14)}`);
   }
 
+  // The buckets mix day-of-week with hour-of-day, and 38 readings cannot pull
+  // the two apart. Saying so is the whole point of this section: an earlier
+  // draft read the weekend ratio as a weekend effect and it is not one.
+  const isRush = (record: DeliveryRecord) => record.hour < 10 || record.hour >= 15;
+  const rush = records.filter(isRush).map((r) => r.minutes);
+  const quiet = records.filter((r) => !isRush(r)).map((r) => r.minutes);
+  const weekend = records.filter((r) => r.day === "Sat" || r.day === "Sun");
+  const weekendInQuietHours = weekend.filter((r) => !isRush(r)).length;
+
   console.log(
-    "\nThat pooled figure is a trap. The weekend effect runs in opposite directions: the\n" +
-      "near-city warehouses get faster and the Malang ones get slower, so pooling cancels\n" +
-      "them out and lands near 1.0, hiding both. Per-warehouse figures are preferred\n" +
-      "wherever they exist for exactly this reason.",
+    "\nThose pooled ratios are misleading, for two separate reasons.\n\n" +
+      `First, the buckets mix day-of-week with hour-of-day: ${weekendInQuietHours} of the ${weekend.length} weekend\n` +
+      "readings fall in the quiet 10:00-14:00 window that the weekday-mid bucket exists to\n" +
+      'describe. In this log "weekend" and "quiet hour" cannot be told apart, so the\n' +
+      "weekend ratio is not evidence of a weekend effect.\n\n" +
+      `What the log does support is the hour: median ${median(rush)} minutes inside the rush window\n` +
+      `(before 10:00, from 15:00) against ${median(quiet)} outside it, over ${rush.length} and ${quiet.length} readings.`,
+  );
+
+  console.log("\nWeekday against weekend, per warehouse. Read the sample sizes.");
+  console.log(
+    `${end("wh", 5)}${end("city", 11)}${pad("wd n", 6)}${pad("wd med", 8)}${pad("we n", 6)}${pad("we med", 8)}`,
   );
   for (const { warehouse, history } of ranked) {
-    const weekend = history.byBucket.weekend?.medianMinutes;
-    if (weekend === undefined) continue;
-    const weekday = median(
-      records.filter((r) => r.warehouseId === warehouse.id && bucketFor(r.day, r.hour) !== "weekend").map((r) => r.minutes),
-    );
-    if (weekday === 0) continue;
+    const weekdayValues = records
+      .filter((r) => r.warehouseId === warehouse.id && bucketFor(r.day, r.hour) !== "weekend")
+      .map((r) => r.minutes);
+    const weekends = history.byBucket.weekend;
     console.log(
-      `  ${warehouse.id} ${end(warehouse.city, 10)} weekday ${pad(weekday, 3)}m -> weekend ${pad(weekend, 3)}m (${
-        weekend < weekday ? "faster" : "slower"
-      })`,
+      `${end(warehouse.id, 5)}${end(warehouse.city, 11)}${pad(weekdayValues.length, 6)}${pad(median(weekdayValues), 8)}${pad(
+        weekends?.sampleSize ?? 0,
+        6,
+      )}${pad(weekends ? weekends.medianMinutes : "-", 8)}`,
     );
   }
+  console.log(
+    "\nMost weekend cells rest on one or two readings, which is why no claim about\n" +
+      "day-of-week is made above. The far warehouses are simply slow at every hour; the\n" +
+      "near ones are fast outside the rush and slow inside it. That is an hour effect.",
+  );
 
   const notes = records.filter((r) => r.note !== "—" && r.note !== "");
   if (notes.length > 0) {
