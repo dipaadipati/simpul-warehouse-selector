@@ -1,0 +1,8 @@
+BRIEF.md
+customer1-historical.csv
+README.md
+node_modules/
+dist/
+.env
+*.log
+.playwright-mcp/

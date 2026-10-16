@@ -1,0 +1,20 @@
+{
+  "name": "simpul-warehouse-selector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Warehouse selection for a medical and pharmaceutical distribution platform.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/http/server.ts",
+    "dev": "node --watch src/http/server.ts",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

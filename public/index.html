@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warehouse Selector</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --border: #dfe3e9;
+    --text: #16191d;
+    --muted: #667085;
+    --accent: #1f6feb;
+    --ok-bg: #e7f6ec;  --ok-fg: #136c34;  --ok-line: #a9d9ba;
+    --warn-bg: #fdf1e3; --warn-fg: #8a4b06; --warn-line: #f0cfa3;
+    --code-bg: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216;
+      --surface: #171b21;
+      --border: #2a313b;
+      --text: #e7ebf0;
+      --muted: #98a2b3;
+      --accent: #6aa8ff;
+      --ok-bg: #12301d;  --ok-fg: #86e0a5;  --ok-line: #1f5233;
+      --warn-bg: #33230f; --warn-fg: #f0c07a; --warn-line: #5a3d18;
+      --code-bg: #222831;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px 64px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 940px; margin: 0 auto; display: grid; gap: 20px; }
+  h1 { font-size: 21px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 14px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .lede { color: var(--muted); margin: 0; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; padding: 0 8px 8px 0; }
+  td { padding: 7px 8px 7px 0; border-top: 1px solid var(--border); vertical-align: middle; }
+  td.num, th.num { text-align: right; padding-right: 0; }
+  input[type=number] {
+    width: 84px; padding: 7px 9px; text-align: right; font: inherit;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 7px;
+  }
+  input[type=number]:focus-visible, button:focus-visible, label.opt:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .pid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--muted); }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+  .tag.cold { border-color: var(--accent); color: var(--accent); }
+  fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+  label.opt { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+  label.opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  label.opt b { display: block; font-size: 14px; }
+  label.opt span { color: var(--muted); font-size: 13px; }
+  input[type=radio] { margin-top: 3px; accent-color: var(--accent); }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+  button { font: inherit; font-weight: 600; padding: 9px 17px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:disabled { opacity: 0.55; cursor: progress; }
+  .verdict { display: flex; gap: 10px; align-items: baseline; padding: 13px 15px; border-radius: 10px; border: 1px solid; margin-bottom: 16px; }
+  .verdict.ok { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-fg); }
+  .verdict.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-fg); }
+  .verdict b { font-size: 15px; }
+  .metrics { display: flex; gap: 26px; flex-wrap: wrap; margin-bottom: 18px; }
+  .metric span { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .metric strong { font-size: 19px; font-weight: 650; }
+  .ship { border: 1px solid var(--border); border-radius: 10px; padding: 13px 15px; margin-bottom: 10px; }
+  .ship h3 { margin: 0 0 3px; font-size: 15px; }
+  .ship .meta { color: var(--muted); font-size: 13px; margin-bottom: 9px; }
+  .ship ul { margin: 0; padding-left: 18px; }
+  ol.steps { margin: 0; padding-left: 20px; }
+  ol.steps li { margin-bottom: 9px; }
+  table.rej td { font-size: 13.5px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--code-bg); padding: 1px 6px; border-radius: 5px; }
+  .alt { border-left: 3px solid var(--accent); padding: 3px 0 3px 13px; margin-top: 16px; color: var(--muted); font-size: 13.5px; }
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  pre { overflow-x: auto; background: var(--code-bg); padding: 14px; border-radius: 9px; font-size: 12.5px; }
+  .hidden { display: none; }
+  @media (max-width: 560px) {
+    body { padding: 20px 16px 48px; }
+    td .tag { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="card">
+    <h1>Warehouse Selector</h1>
+    <p class="lede">Enter an order. The system picks the warehouse or warehouses that should fulfil it and explains why.</p>
+  </header>
+
+  <form class="card" id="order-form">
+    <h2>Order</h2>
+    <table>
+      <thead>
+        <tr><th>Product</th><th>Category</th><th class="num">Quantity</th></tr>
+      </thead>
+      <tbody id="product-rows"></tbody>
+    </table>
+
+    <h2 style="margin-top:24px">Cold-chain policy</h2>
+    <fieldset id="policy-options">
+      <label class="opt">
+        <input type="radio" name="policy" value="end-to-end" checked>
+        <span><b>End-to-end</b><span>Vaccines need cold storage and a refrigerated van. The cold chain must hold in transit too.</span></span>
+      </label>
+      <label class="opt">
+        <input type="radio" name="policy" value="storage-only">
+        <span><b>Storage only</b><span>Vaccines need a warehouse with cold storage. Vehicle type is ignored.</span></span>
+      </label>
+    </fieldset>
+
+    <div class="actions">
+      <button type="submit" class="primary" id="submit">Find warehouse</button>
+      <button type="button" id="example">Load example</button>
+      <button type="button" id="clear">Clear</button>
+      <span id="status" class="lede"></span>
+    </div>
+  </form>
+
+  <section id="result" class="card hidden" aria-live="polite"></section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let catalog = null;
+
+const el = (tag, props = {}, ...kids) => {
+  const node = Object.assign(document.createElement(tag), props);
+  for (const kid of kids.flat()) if (kid != null) node.append(kid);
+  return node;
+};
+
+async function loadCatalog() {
+  catalog = await (await fetch("/api/catalog")).json();
+  const rows = $("product-rows");
+  rows.replaceChildren(
+    ...catalog.products.map((p) =>
+      el("tr", {},
+        el("td", {},
+          el("div", {}, el("span", { className: "pid", textContent: p.id + "  " }), p.name),
+          el("span", { className: "tag" + (p.coldChain ? " cold" : ""), textContent: p.coldChain ? "cold chain" : "ambient" }),
+        ),
+        el("td", { className: "lede", textContent: p.category }),
+        el("td", { className: "num" },
+          el("input", { type: "number", min: "0", step: "1", placeholder: "0", value: "", id: "qty-" + p.id, "aria-label": "Quantity of " + p.name }),
+        ),
+      ),
+    ),
+  );
+}
+
+function readOrder() {
+  return catalog.products
+    .map((p) => ({ productId: p.id, quantity: Number($("qty-" + p.id).value) }))
+    .filter((line) => Number.isInteger(line.quantity) && line.quantity > 0);
+}
+
+const tag = (text, cls = "") => el("span", { className: "tag " + cls, textContent: text });
+
+function renderResult(result) {
+  const box = $("result");
+  box.classList.remove("hidden");
+  const parts = [];
+
+  parts.push(
+    el("div", { className: "verdict " + (result.feasible ? "ok" : "warn") },
+      el("b", { textContent: result.feasible ? "Fulfilable" : "Cannot be fulfilled" }),
+      el("span", { textContent: result.explanation.summary }),
+    ),
+  );
+
+  if (result.feasible) {
+    parts.push(
+      el("div", { className: "metrics" },
+        el("div", { className: "metric" }, el("span", { textContent: "Shipments" }), el("strong", { textContent: String(result.shipmentCount) })),
+        el("div", { className: "metric" }, el("span", { textContent: "Total distance" }), el("strong", { textContent: result.totalDistanceKm + " km" })),
+        el("div", { className: "metric" }, el("span", { textContent: "Policy" }),
+          el("strong", { textContent: result.policy.coldChain })),
+      ),
+    );
+
+    for (const a of result.allocations) {
+      parts.push(
+        el("div", { className: "ship" },
+          el("h3", { textContent: a.warehouseId + " - " + a.city }),
+          el("div", { className: "meta", textContent: a.distanceKm + " km, " + a.fleet + (a.coldChainCapable ? ", cold-chain capable" : ", no cold storage") }),
+          el("ul", {}, a.lines.map((l) => el("li", { textContent: l.qty + " x " + l.productId + " " + l.productName }))),
+        ),
+      );
+    }
+  }
+
+  if (result.unfilled.length) {
+    parts.push(
+      el("h2", { textContent: "Unfilled" }),
+      el("table", { className: "rej" },
+        el("tbody", {}, result.unfilled.map((u) =>
+          el("tr", {},
+            el("td", {}, el("code", { textContent: u.productId })),
+            el("td", {}, tag(u.code, "cold")),
+            el("td", { textContent: "Asked for " + u.qtyRequested + ", short by " + u.qtyShort + " (" + u.qtyAvailable + " available)" }),
+          ),
+        )),
+      ),
+    );
+  }
+
+  parts.push(el("h2", { textContent: "Why", style: "margin-top:24px" }),
+    el("ol", { className: "steps" }, result.explanation.steps.map((s) => el("li", { textContent: s }))));
+
+  if (result.rejected.length) {
+    parts.push(
+      el("h2", { textContent: "Warehouses not used", style: "margin-top:24px" }),
+      el("table", { className: "rej" },
+        el("tbody", {}, result.rejected.map((r) =>
+          el("tr", {},
+            el("td", {}, el("code", { textContent: r.warehouseId })),
+            el("td", {}, tag(r.code)),
+            el("td", { textContent: r.reason }),
+          ),
+        )),
+      ),
+    );
+  }
+
+  if (result.explanation.alternativePolicy) {
+    const alt = result.explanation.alternativePolicy;
+    parts.push(
+      el("div", { className: "alt" },
+        el("b", { textContent: alt.sameAsChosen ? "The other policy agrees: " : "The other policy would differ: " }),
+        el("span", { textContent: 'under "' + alt.policy + '", ' + alt.summary + "." }),
+      ),
+    );
+  }
+
+  parts.push(
+    el("details", {},
+      el("summary", { textContent: "Raw JSON response" }),
+      el("pre", { textContent: JSON.stringify(result, null, 2) }),
+    ),
+  );
+
+  box.replaceChildren(...parts);
+}
+
+$("order-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const items = readOrder();
+  if (!items.length) {
+    $("status").textContent = "Enter a quantity for at least one product.";
+    $("result").classList.add("hidden");
+    return;
+  }
+  const policy = new FormData(event.currentTarget).get("policy") || catalog.defaultPolicy;
+  $("submit").disabled = true;
+  $("status").textContent = "Working...";
+  try {
+    const response = await fetch("/api/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ items, policy }),
+    });
+    const body = await response.json();
+    $("status").textContent = "";
+    if (!response.ok) {
+      $("result").classList.remove("hidden");
+      $("result").replaceChildren(el("div", { className: "verdict warn" }, el("b", { textContent: "Rejected" }),
+        el("span", { textContent: (body.problems || [body.error]).join("; ") })));
+      return;
+    }
+    renderResult(body);
+  } catch (error) {
+    $("status").textContent = "Request failed: " + error.message;
+  } finally {
+    $("submit").disabled = false;
+  }
+});
+
+$("example").addEventListener("click", () => {
+  const example = { P001: 10, P002: 45, P003: 0, P004: 0, P005: 20 };
+  for (const [id, qty] of Object.entries(example)) $("qty-" + id).value = qty ? String(qty) : "";
+});
+
+$("clear").addEventListener("click", () => {
+  for (const p of catalog.products) $("qty-" + p.id).value = "";
+  $("result").classList.add("hidden");
+  $("status").textContent = "";
+});
+
+loadCatalog().catch((error) => { $("status").textContent = "Could not load catalog: " + error.message; });
+</script>
+</body>
+</html>
