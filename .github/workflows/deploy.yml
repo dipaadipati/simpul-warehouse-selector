@@ -1,6 +1,10 @@
 # Deploy to the VPS. Manual only: this runs when someone clicks "Run workflow",
 # never on push, so a broken commit cannot take the running site down with it.
 #
+# This file only updates the checkout and then calls deploy/deploy.sh. The build
+# and the health check live there, in one copy, so the automated deploy and a
+# hand-run deploy cannot drift apart. See section 11 of the README.
+#
 # Requires these repository secrets (Settings, Secrets and variables, Actions):
 #   VPS_HOST      hostname or IP of the server
 #   VPS_USER      SSH user that owns the checkout
@@ -69,29 +73,13 @@ jobs:
           # is master, and hardcoding one here is a deploy that fails on the day
           # the repository is renamed.
           git remote set-head origin --auto >/dev/null
+          # --hard discards any edit made on the server, which is the point of a
+          # deploy target. It does not touch ignored files, so the delivery log
+          # in data/ survives.
           git reset --hard origin/HEAD
           echo "now at $(git rev-parse --short HEAD)"
 
-          # --hard discards any edit made on the server, which is the point of a
-          # deploy target. It does not touch ignored files, so the delivery log
-          # in data/ survives every deploy.
-          echo "--- building and starting ---"
-          docker compose up -d --build
-
-          # "the command exited 0" is not the same as "the service answers", and
-          # the difference is exactly what you want to know from a deploy.
-          echo "--- waiting for health ---"
-          for _ in $(seq 1 15); do
-            if curl -fsS -o /dev/null http://127.0.0.1:3000/healthz; then
-              echo "health check passed"
-              docker compose ps
-              exit 0
-            fi
-            sleep 2
-          done
-
-          echo "health check FAILED after 30 seconds"
-          docker compose ps || true
-          docker compose logs --tail=60 || true
-          exit 1
+          # Everything past this line is deploy/deploy.sh, not a copy of it, so
+          # this workflow and a person deploying by hand run the same steps.
+          bash deploy/deploy.sh
           REMOTE
