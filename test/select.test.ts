@@ -148,6 +148,13 @@ test("a refusal caused by the policy says so and offers the other policy", () =>
   // printed the same sentence twice, one line apart, on the refusal page.
   assert.doesNotMatch(text, /W02 \+ W04 \+ W06 \+ W07 \+ W08 at 332 km/);
 
+  // "No combination of warehouses can cover the order" is only worth believing
+  // if something says the combinations were actually enumerated. This note used
+  // to be produced on the success path only, where the reader is not being asked
+  // to take a negative on faith.
+  assert.match(refused.explanation.notes.join(" "), /all 255 non-empty subsets/);
+  assert.match(refused.explanation.notes.join(" "), /exhaustive/);
+
   // The same refusal where no policy would help must not invent an alternative.
   const hopeless = selectWarehouses([{ productId: "P002", quantity: 500 }]);
   assert.equal(hopeless.explanation.alternativePolicy, undefined);
@@ -214,6 +221,34 @@ test("every allocation carries stock and the explanation is always populated", (
     for (const allocation of result.allocations) assert.ok(allocation.lines.length > 0);
     assert.ok(result.explanation.steps.length >= 3);
     assert.ok(result.explanation.summary.length > 0);
+  }
+});
+
+test("the alternative plan is stated once, not once on every surface", () => {
+  // The page renders alternativePolicy as a callout of its own, directly under
+  // the steps. A step that names the same warehouses and the same distance
+  // prints one fact twice, one line apart. This was fixed on the refusal path
+  // first and left standing on the success path, so it is asserted on both.
+  const cases = [
+    { name: "a policy that reaches the same warehouses", order: [{ productId: "P002", quantity: 10 }, { productId: "P005", quantity: 10 }], policy: "end-to-end" as ColdChainPolicy },
+    { name: "a policy that decides differently", order: [{ productId: "P002", quantity: 10 }], policy: "end-to-end" as ColdChainPolicy },
+    { name: "a refusal the other policy would not make", order: [{ productId: "P002", quantity: 158 }], policy: "end-to-end" as ColdChainPolicy },
+  ];
+
+  for (const { name, order, policy } of cases) {
+    const result = selectWarehouses(order, policy);
+    const alternative = result.explanation.alternativePolicy;
+    assert.ok(alternative, name + ": expected the other policy to be reported at all");
+
+    // Where the two policies agree, the alternative plan *is* the chosen plan, so
+    // one mention in the steps is the "Best:" line doing its job. A second one is
+    // the step that used to paraphrase the callout.
+    const allowed = alternative.sameAsChosen ? 1 : 0;
+    const mentions = result.explanation.steps.join(" ").split(alternative.summary).length - 1;
+    assert.ok(
+      mentions <= allowed,
+      name + ": the steps state the alternative plan " + mentions + " times (" + alternative.summary + ")",
+    );
   }
 });
 

@@ -222,7 +222,13 @@ export function buildUnfulfillableExplanation(
     summary: `Cannot be fulfilled: ${unfilled.map((u) => `${u.productId} short by ${u.qtyShort}`).join(", ")}.`,
     policy: policyText(policy),
     steps,
-    notes: [],
+    // The success path carries this note because the search is what makes the
+    // answer worth trusting. Here it is what makes the refusal worth trusting,
+    // which is the stronger claim of the two: "no combination can cover this" is
+    // only as good as the assurance that no combination was skipped.
+    notes: [
+      `The search enumerates all ${combinationCount()} non-empty subsets of the ${WAREHOUSES.length} warehouses, so this refusal is exhaustive rather than the result of a greedy first fit.`,
+    ],
     alternativePolicy,
   };
 }
@@ -282,10 +288,17 @@ export function buildExplanation(
   if (coldProducts.length > 0) {
     const other: ColdChainPolicy = policy === "end-to-end" ? "storage-only" : "end-to-end";
 
+    // No branch here names the alternative plan. The page renders
+    // alternativePolicy as its own callout directly beneath the steps, and a fact
+    // printed twice, one line apart, reads as a page nobody looked at. The
+    // refusal path is trimmed for the same reason - it was trimmed first, and
+    // this path kept the duplication for a while because of it.
     if (alternativePlan === null) {
       // The stricter reading can leave an order unfulfillable that the looser
       // one can serve, so this branch is reachable rather than theoretical.
-      alternativePolicy = { policy: other, summary: "no feasible plan under this policy", sameAsChosen: false };
+      // "exists" and not "under this policy": the reader is standing in the
+      // other policy, so the shorter phrase reads as though it described theirs.
+      alternativePolicy = { policy: other, summary: "no feasible plan exists", sameAsChosen: false };
       steps.push(
         `Under the "${other}" policy this order could not be fulfilled at all, which is the strongest form of the storage-versus-transport trade-off. "${policy}" is in force.`,
       );
@@ -294,12 +307,8 @@ export function buildExplanation(
       alternativePolicy = { policy: other, summary: describePlan(alternativePlan), sameAsChosen: same };
       steps.push(
         same
-          ? `The "${other}" policy would reach the same warehouses here: ${describePlan(
-              alternativePlan,
-            )}. This order does not sit on the storage-versus-transport decision point.`
-          : `The "${other}" policy would decide differently: ${describePlan(
-              alternativePlan,
-            )}. That is the storage-versus-transport trade-off, surfaced rather than hidden. "${policy}" is in force.`,
+          ? `The "${other}" policy would reach the same warehouses here, so this order does not sit on the storage-versus-transport decision point.`
+          : `The "${other}" policy would decide differently, which is the storage-versus-transport trade-off, surfaced rather than hidden. "${policy}" is in force.`,
       );
     }
   }

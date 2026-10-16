@@ -136,16 +136,19 @@
       <div class="actions">
         <label for="depart-day" class="lede">Departing</label>
         <select id="depart-day" aria-label="Departure day"><option value="">any time</option></select>
-        <select id="depart-hour" aria-label="Departure hour"><option value="">-</option></select>
+        <select id="depart-hour" aria-label="Departure hour"><option value="">any time</option></select>
         <span class="lede">Leave both on "any time" to use the all-day median instead.</span>
       </div>
     </section>
 
     <div class="actions">
       <button type="submit" class="primary" id="submit">Find warehouse</button>
-      <button type="button" id="example">Load example</button>
+      <button type="button" id="example">Fill example order</button>
       <button type="button" id="clear">Clear</button>
-      <span id="status" class="lede"></span>
+      <!-- role="status" rather than a bare span: this is the only validation
+           message the product has, and without it a screen reader never hears
+           that the submit was refused. #result is announced for the same reason. -->
+      <span id="status" class="lede" role="status"></span>
     </div>
   </form>
 
@@ -264,6 +267,20 @@ function renderResult(result) {
   parts.push(el("h2", { textContent: "Why", style: "margin-top:24px" }),
     el("ol", { className: "steps" }, result.explanation.steps.map((s) => el("li", { textContent: s }))));
 
+  // The alternative policy belongs to the reasoning, so it sits directly under
+  // the steps it comments on, before the list of warehouses that were passed
+  // over. It used to be pushed after that table, which put the same callout in
+  // two different places depending on whether the order could be fulfilled.
+  if (result.explanation.alternativePolicy) {
+    const alt = result.explanation.alternativePolicy;
+    parts.push(
+      el("div", { className: "alt" },
+        el("b", { textContent: alt.sameAsChosen ? "The other policy agrees: " : "The other policy would differ: " }),
+        el("span", { textContent: 'under "' + alt.policy + '", ' + alt.summary + "." }),
+      ),
+    );
+  }
+
   if (result.rejected.length) {
     parts.push(
       el("h2", { textContent: "Warehouses not used", style: "margin-top:24px" }),
@@ -275,16 +292,6 @@ function renderResult(result) {
             el("td", { textContent: r.reason }),
           ),
         )),
-      ),
-    );
-  }
-
-  if (result.explanation.alternativePolicy) {
-    const alt = result.explanation.alternativePolicy;
-    parts.push(
-      el("div", { className: "alt" },
-        el("b", { textContent: alt.sameAsChosen ? "The other policy agrees: " : "The other policy would differ: " }),
-        el("span", { textContent: 'under "' + alt.policy + '", ' + alt.summary + "." }),
       ),
     );
   }
@@ -308,9 +315,14 @@ function renderResult(result) {
  * settings the reader has just replaced. A stale answer next to a fresh radio
  * button is the one way this page can mislead.
  */
-$("order-form").addEventListener("change", () => {
+function inputsChanged() {
+  // Any complaint still sitting in #status was about the value that has just
+  // been replaced, so it goes with it. Without this the message outlives the
+  // mistake it describes and survives Clear as well.
+  if (!$("submit").disabled) $("status").textContent = "";
   if (!$("result").classList.contains("hidden") && !$("submit").disabled) $("order-form").requestSubmit();
-});
+}
+$("order-form").addEventListener("change", inputsChanged);
 
 $("order-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -354,6 +366,9 @@ $("order-form").addEventListener("submit", async (event) => {
 $("example").addEventListener("click", () => {
   const example = { P001: 10, P002: 45, P003: 0, P004: 0, P005: 20 };
   for (const [id, qty] of Object.entries(example)) $("qty-" + id).value = qty ? String(qty) : "";
+  // Writing .value fires no change event, so this button used to leave the
+  // previous answer on screen next to a form that no longer produces it.
+  inputsChanged();
 });
 
 $("clear").addEventListener("click", () => {
