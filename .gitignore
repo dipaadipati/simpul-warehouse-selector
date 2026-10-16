@@ -7,5 +7,5 @@ dist/
 *.log
 .playwright-mcp/
 .playwright-cli/
-# docker-compose mounts the delivery log here; it must never be committed.
+# The deploy puts the delivery log here, outside git; it must never be committed.
 data/
