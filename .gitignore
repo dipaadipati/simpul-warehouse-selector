@@ -9,3 +9,10 @@ dist/
 .playwright-cli/
 # The deploy puts the delivery log here, outside git; it must never be committed.
 data/
+# Both email attachments live beside the source so they are easy to find, and
+# neither belongs in the repo: the README goes as a file, and the chat log is
+# quoted from freely and should not be searchable.
+AI-CONVERSATION-LOG.md
+# The same goes for anything the session's own /export writes. Its filename is
+# the timestamp plus the first prompt, so it cannot be named ahead of time.
+*.txt
