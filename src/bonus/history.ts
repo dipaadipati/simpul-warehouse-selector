@@ -16,8 +16,9 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** The log sits beside the project root, one level above src/. */
-export const defaultHistoryPath = join(here, "..", "..", "customer1-historical.csv");
+/** The log sits beside the project root unless SIMPUL_HISTORY_PATH points elsewhere. */
+export const defaultHistoryPath =
+  process.env.SIMPUL_HISTORY_PATH ?? join(here, "..", "..", "customer1-historical.csv");
 
 export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 export type Day = (typeof DAYS)[number];
