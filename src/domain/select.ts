@@ -11,7 +11,13 @@ import { DEFAULT_POLICY, isColdChainCapable, requireColdChainTransport } from ".
 import type { ColdChainPolicy } from "./policy.ts";
 import { distanceCost, findPlan } from "./plan.ts";
 import type { Cost, Objective, OrderLine, Plan } from "./plan.ts";
-import { buildExplanation, buildRejections, buildUnfilled, buildUnfulfillableExplanation } from "./explain.ts";
+import {
+  availableByProduct,
+  buildExplanation,
+  buildRejections,
+  buildUnfilled,
+  buildUnfulfillableExplanation,
+} from "./explain.ts";
 import type { Explanation, ObjectiveNote, Rejection, Unfilled } from "./explain.ts";
 import { defaultTravelModel, plannedMinutes } from "../bonus/travel.ts";
 import type { DepartureTime, TravelModel } from "../bonus/travel.ts";
@@ -156,6 +162,14 @@ export function selectWarehouses(
 
   const unfilled = buildUnfilled(demand, policy);
   if (unfilled.length > 0) {
+    // "Only 108 exist" is true only of this policy: 158 exist under the looser
+    // one. A refusal that hides that reads as a stock shortage when it is a
+    // cold-chain capacity shortage, so the alternative is computed and offered.
+    const otherPolicy: ColdChainPolicy = policy === "end-to-end" ? "storage-only" : "end-to-end";
+    const otherAvailable = availableByProduct(demand, otherPolicy);
+    const otherPlan =
+      buildUnfilled(demand, otherPolicy).length === 0 ? findPlan(demand, otherPolicy, distanceCost) : null;
+
     return {
       feasible: false,
       policy: inForce,
@@ -165,7 +179,11 @@ export function selectWarehouses(
       allocations: [],
       rejected: [],
       unfilled,
-      explanation: buildUnfulfillableExplanation(demand, policy, unfilled),
+      explanation: buildUnfulfillableExplanation(demand, policy, unfilled, {
+        policy: otherPolicy,
+        plan: otherPlan,
+        qtyAvailable: otherAvailable,
+      }),
     };
   }
 

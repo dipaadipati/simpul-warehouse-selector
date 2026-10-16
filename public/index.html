@@ -31,6 +31,8 @@
     }
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body {
     margin: 0; padding: 32px 16px 64px;
     background: var(--bg); color: var(--text);
@@ -219,16 +221,17 @@ function renderResult(result) {
   );
 
   if (result.feasible) {
+    const metric = (label, value) => el("div", { className: "metric" }, el("span", { textContent: label }), el("strong", { textContent: value }));
+    const distance = metric("Total distance", result.totalDistanceKm + " km");
+    // The metric that actually decided the plan leads, so ranking by travel time
+    // visibly changes the headline instead of only the prose underneath it.
+    const travel = result.estimatedMinutes === undefined ? null : metric("Predicted travel time", result.estimatedMinutes + " min");
+
     parts.push(
       el("div", { className: "metrics" },
-        el("div", { className: "metric" }, el("span", { textContent: "Shipments" }), el("strong", { textContent: String(result.shipmentCount) })),
-        el("div", { className: "metric" }, el("span", { textContent: "Total distance" }), el("strong", { textContent: result.totalDistanceKm + " km" })),
-        el("div", { className: "metric" }, el("span", { textContent: "Policy" }),
-          el("strong", { textContent: result.policy.coldChain })),
-        ...(result.estimatedMinutes === undefined ? [] : [
-          el("div", { className: "metric" }, el("span", { textContent: "Predicted travel time" }),
-            el("strong", { textContent: result.estimatedMinutes + " min" })),
-        ]),
+        metric("Shipments", String(result.shipmentCount)),
+        ...(travel ? [travel, distance] : [distance]),
+        metric("Policy", result.policy.coldChain),
       ),
     );
 
@@ -286,15 +289,28 @@ function renderResult(result) {
     );
   }
 
+  const notes = result.explanation.notes || [];
   parts.push(
     el("details", {},
-      el("summary", { textContent: "Raw JSON response" }),
+      el("summary", { textContent: "Decision details" }),
+      ...(notes.length ? [el("ul", {}, notes.map((n) => el("li", { textContent: n })))] : []),
       el("pre", { textContent: JSON.stringify(result, null, 2) }),
     ),
   );
 
   box.replaceChildren(...parts);
+  box.scrollIntoView({ block: "start" });
 }
+
+/**
+ * Changing the policy, the ranking, or the departure time changes the answer, so
+ * re-run rather than leaving a result on screen that was produced by the
+ * settings the reader has just replaced. A stale answer next to a fresh radio
+ * button is the one way this page can mislead.
+ */
+$("order-form").addEventListener("change", () => {
+  if (!$("result").classList.contains("hidden") && !$("submit").disabled) $("order-form").requestSubmit();
+});
 
 $("order-form").addEventListener("submit", async (event) => {
   event.preventDefault();

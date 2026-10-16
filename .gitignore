@@ -6,3 +6,6 @@ dist/
 .env
 *.log
 .playwright-mcp/
+.playwright-cli/
+# docker-compose mounts the delivery log here; it must never be committed.
+data/

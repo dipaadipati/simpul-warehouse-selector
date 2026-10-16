@@ -113,6 +113,55 @@ test("an order no combination of warehouses can cover is refused, not half-shipp
   assert.match(result.explanation.summary, /short by 392/);
 });
 
+test("a warehouse that cannot carry a cold line is never called merely unnecessary", () => {
+  // W01 holds 300 of the P005 and none of the P002, so it stocks part of this
+  // order and used to be rejected as "eligible and stocked, but not needed" -
+  // which reads as a live contender that lost on distance. It never was one: it
+  // has no cold storage, so it cannot serve this order at all.
+  const result = selectWarehouses([
+    { productId: "P002", quantity: 10 },
+    { productId: "P005", quantity: 100 },
+  ]);
+
+  assert.ok(!ids(result).includes("W01"));
+  assert.deepEqual(codesFor(result, "W01"), ["cold-storage-missing"]);
+  const rejection = result.rejected.find((r) => r.warehouseId === "W01")!;
+  assert.match(rejection.reason, /P002/);
+  assert.doesNotMatch(rejection.reason, /not needed/);
+});
+
+test("a refusal caused by the policy says so and offers the other policy", () => {
+  // 158 fits under storage-only (30+40+20+8+60) and not under end-to-end. The
+  // refusal has to distinguish "there is not enough stock" from "this policy
+  // will not let us use the stock there is".
+  const refused = selectWarehouses([{ productId: "P002", quantity: 158 }], "end-to-end");
+  assert.equal(refused.feasible, false);
+  assert.equal(refused.explanation.alternativePolicy?.policy, "storage-only");
+  assert.match(refused.explanation.alternativePolicy!.summary, /W02/);
+
+  const text = refused.explanation.steps.join(" ");
+  assert.match(text, /108 exist .*\(158 under the "storage-only" policy\)/);
+  assert.match(text, /short of cold-chain capacity/);
+
+  // The same refusal where no policy would help must not invent an alternative.
+  const hopeless = selectWarehouses([{ productId: "P002", quantity: 500 }]);
+  assert.equal(hopeless.explanation.alternativePolicy, undefined);
+  assert.doesNotMatch(hopeless.explanation.steps.join(" "), /short of cold-chain capacity/);
+});
+
+test("commentary on the method is kept out of the dispatcher-facing steps", () => {
+  const result = selectWarehouses([{ productId: "P002", quantity: 10 }]);
+
+  assert.ok(result.explanation.notes.length > 0, "the method notes are still produced");
+  const notes = result.explanation.notes.join(" ");
+  assert.match(notes, /255 non-empty subsets/);
+  assert.match(notes, /decision point in this dataset/);
+
+  const steps = result.explanation.steps.join(" ");
+  assert.doesNotMatch(steps, /255|decision point in this dataset/);
+  assert.match(steps, /only W04, W07, W08 may handle it/);
+});
+
 test("what counts as available depends on the policy in force", () => {
   // 30 + 40 + 20 + 8 + 60 = 158, and only under storage-only.
   const strict = selectWarehouses([{ productId: "P002", quantity: 158 }], "end-to-end");

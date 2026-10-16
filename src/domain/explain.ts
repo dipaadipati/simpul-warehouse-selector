@@ -56,7 +56,15 @@ export interface ObjectiveNote {
 export interface Explanation {
   summary: string;
   policy: string;
+  /** What happened, in the words a dispatcher would use. Rendered as the "Why" list. */
   steps: string[];
+  /**
+   * How the machinery reached that answer, and commentary on the dataset itself.
+   * Kept out of {@link steps} so the screen speaks to the person placing the
+   * order rather than to whoever is assessing the code, and shown under the
+   * decision details for the reader who wants them.
+   */
+  notes: string[];
   alternativePolicy?: {
     policy: ColdChainPolicy;
     summary: string;
@@ -80,9 +88,13 @@ export function buildRejections(
   for (const warehouse of WAREHOUSES) {
     if (used.has(warehouse.id)) continue;
 
+    // Every cold line in the order this warehouse may not carry, whether or not
+    // it happens to hold stock of it. A warehouse that cannot carry one line is
+    // out of the running for the whole order, and saying "eligible and stocked"
+    // about it would be false: it only ever held some of the order.
     const blocked = demand
       .map((line) => productById(line.productId)!)
-      .filter((p) => p.coldChain && (warehouse.stock[p.id] ?? 0) > 0 && !canCarry(warehouse, p, policy));
+      .filter((p) => p.coldChain && !canCarry(warehouse, p, policy));
 
     if (blocked.length > 0) {
       const ids = blocked.map((p) => p.id).join(", ");
@@ -123,25 +135,39 @@ export function buildRejections(
   return out;
 }
 
-/** Everything the customer asked for that no combination of warehouses can cover. */
-export function buildUnfilled(
+/** Total stock of each ordered product across the warehouses this policy allows. */
+export function availableByProduct(
   demand: readonly OrderLine[],
   policy: ColdChainPolicy,
-): Unfilled[] {
+): Map<string, number> {
+  return new Map(
+    demand.map((line) => {
+      const product = productById(line.productId)!;
+      return [
+        product.id,
+        WAREHOUSES.filter((w) => canCarry(w, product, policy)).reduce(
+          (sum, w) => sum + (w.stock[product.id] ?? 0),
+          0,
+        ),
+      ];
+    }),
+  );
+}
+
+/** Everything the customer asked for that no combination of warehouses can cover. */
+export function buildUnfilled(demand: readonly OrderLine[], policy: ColdChainPolicy): Unfilled[] {
+  const available = availableByProduct(demand, policy);
   return demand
     .map((line) => {
       const product = productById(line.productId)!;
-      const available = WAREHOUSES.filter((w) => canCarry(w, product, policy)).reduce(
-        (sum, w) => sum + (w.stock[product.id] ?? 0),
-        0,
-      );
+      const qty = available.get(product.id)!;
       return {
         productId: product.id,
         productName: product.name,
         code: "insufficient-stock" as const,
         qtyRequested: line.quantity,
-        qtyShort: Math.max(0, line.quantity - available),
-        qtyAvailable: available,
+        qtyShort: Math.max(0, line.quantity - qty),
+        qtyAvailable: qty,
       };
     })
     .filter((line) => line.qtyShort > 0);
@@ -150,22 +176,52 @@ export function buildUnfilled(
 const describeDemand = (demand: readonly OrderLine[]) =>
   demand.map((l) => `${l.quantity} x ${l.productId} ${productById(l.productId)!.name}`).join("; ");
 
+/**
+ * The refusal. `alternative` is the other cold-chain policy when one of them
+ * could actually cover the order, which is the only case where the refusal is a
+ * consequence of the policy rather than of the stock on hand. Without it the
+ * availability figure reads as a regional total rather than a policy-limited one.
+ */
 export function buildUnfulfillableExplanation(
   demand: readonly OrderLine[],
   policy: ColdChainPolicy,
   unfilled: readonly Unfilled[],
+  alternative?: { policy: ColdChainPolicy; plan: Plan | null; qtyAvailable: Map<string, number> },
 ): Explanation {
+  const steps = [`Order: ${describeDemand(demand)}.`, policyText(policy)];
+
+  for (const u of unfilled) {
+    const elsewhere = alternative?.qtyAvailable.get(u.productId);
+    // Only the larger figure, so a stricter alternative never reads as headroom.
+    const contrast =
+      alternative && elsewhere !== undefined && elsewhere > u.qtyAvailable
+        ? ` (${elsewhere} under the "${alternative.policy}" policy)`
+        : "";
+    steps.push(
+      `${u.productId} needs ${u.qtyRequested}, but only ${u.qtyAvailable} exist across every warehouse this policy allows${contrast}. No combination of warehouses can cover the order, so nothing is shipped: a partial delivery that was never asked for would be worse than a clear refusal.`,
+    );
+  }
+
+  let alternativePolicy: Explanation["alternativePolicy"];
+  if (alternative?.plan) {
+    alternativePolicy = {
+      policy: alternative.policy,
+      summary: describePlan(alternative.plan),
+      sameAsChosen: false,
+    };
+    steps.push(
+      `This order is not short of stock, it is short of cold-chain capacity: under the "${alternative.policy}" policy it can be covered, by ${describePlan(
+        alternative.plan,
+      )}. Nothing is shipped here because "${policy}" is in force.`,
+    );
+  }
+
   return {
     summary: `Cannot be fulfilled: ${unfilled.map((u) => `${u.productId} short by ${u.qtyShort}`).join(", ")}.`,
     policy: policyText(policy),
-    steps: [
-      `Order: ${describeDemand(demand)}.`,
-      policyText(policy),
-      ...unfilled.map(
-        (u) =>
-          `${u.productId} needs ${u.qtyRequested}, but only ${u.qtyAvailable} exist across every warehouse this policy allows. No combination of warehouses can cover the order, so nothing is shipped: a partial delivery that was never asked for would be worse than a clear refusal.`,
-      ),
-    ],
+    steps,
+    notes: [],
+    alternativePolicy,
   };
 }
 
@@ -179,6 +235,9 @@ export function buildExplanation(
   const coldProducts = demand.map((l) => productById(l.productId)!).filter((p) => p.coldChain);
 
   const steps: string[] = [`Order: ${describeDemand(demand)}.`, policyText(policy)];
+  const notes: string[] = [
+    `The search enumerates all ${combinationCount()} non-empty subsets of the ${WAREHOUSES.length} warehouses, so the winner is the optimal one rather than a greedy first fit.`,
+  ];
 
   if (coldProducts.length > 0) {
     const capable = WAREHOUSES.filter((w) => isColdChainCapable(w, policy)).map((w) => w.id);
@@ -187,13 +246,13 @@ export function buildExplanation(
         ", ",
       )} may handle ${coldProducts.length === 1 ? "it" : "them"}.`,
     );
-    steps.push(
+    notes.push(
       'The decision point in this dataset: W02 (Surabaya, 12 km) and W06 (Malang, 95 km) both have cold storage and hold vaccine stock, but neither has a refrigerated van. They win on distance if the cold chain only has to hold in storage, and they drop out entirely if it also has to hold in transit. The policy in force is what settles it, and it is a policy, not a fact.',
     );
   }
 
   steps.push(
-    `Searched all ${combinationCount()} non-empty warehouse combinations. Fewest shipments wins first, then least ${
+    `Fewest shipments wins first, then least ${
       objectiveNote ? "predicted travel time" : "total distance"
     }. Best: ${describePlan(plan)}.`,
   );
@@ -243,5 +302,11 @@ export function buildExplanation(
     }
   }
 
-  return { summary: `Fulfilled by ${describePlan(plan)}.`, policy: policyText(policy), steps, alternativePolicy };
+  return {
+    summary: `Fulfilled by ${describePlan(plan)}.`,
+    policy: policyText(policy),
+    steps,
+    notes,
+    alternativePolicy,
+  };
 }
