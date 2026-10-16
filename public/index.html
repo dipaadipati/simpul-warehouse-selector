@@ -408,6 +408,15 @@ $("example").addEventListener("click", () => {
 
 $("clear").addEventListener("click", () => {
   for (const p of catalog.products) $("qty-" + p.id).value = "";
+  // The departure is part of the order, so it goes with it. Leaving it set meant
+  // Clear emptied the quantities and then the *next* order quietly carried a time
+  // the reader believed they had cleared - 74 minutes instead of 33 - and the day
+  // was locked behind the hour, so the way back was to read the hint and work out
+  // which of the pair to unset first. Writing .value fires no change event, so the
+  // re-run does not happen here and does not need to: no result is on screen.
+  $("depart-day").value = "";
+  $("depart-hour").value = "";
+  syncDeparture();
   $("result").classList.add("hidden");
   $("status").textContent = "";
 });

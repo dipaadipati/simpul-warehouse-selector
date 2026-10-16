@@ -33,24 +33,34 @@ const MAX_BODY_BYTES = 64 * 1024;
 const ORDER_FIELDS = ["items", "policy", "objective", "departAt"];
 
 /**
- * Which method each path answers. Consulted only by the fallback, so that a path
+ * Which methods each path answers. Consulted only by the fallback, so that a path
  * that exists under another method answers 405 instead of 404: the caller has
  * the URL right and the verb wrong, and "no route" sends them looking for a
  * missing endpoint rather than reading the one line that would fix it.
+ *
+ * HEAD is listed wherever GET is, because RFC 9110 9.3.2 says a server that
+ * serves GET serves HEAD. Uptime monitors reach for HEAD first, and the one
+ * endpoint they are most likely to point at is /healthz.
  */
-const METHODS: Record<string, string> = {
-  "/healthz": "GET",
-  "/api/catalog": "GET",
-  "/api/orders": "POST",
-  "/": "GET",
-  "/index.html": "GET",
+const METHODS: Record<string, readonly string[]> = {
+  "/healthz": ["GET", "HEAD"],
+  "/api/catalog": ["GET", "HEAD"],
+  "/api/orders": ["POST"],
+  "/": ["GET", "HEAD"],
+  "/index.html": ["GET", "HEAD"],
 };
 
-const json = (res: ServerResponse, status: number, body: unknown) => {
+const json = (
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+) => {
   const payload = JSON.stringify(body, null, 2);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(payload),
+    ...headers,
   });
   res.end(payload);
 };
@@ -165,12 +175,16 @@ export function createApp() {
     const path = new URL(req.url ?? "/", "http://localhost").pathname;
 
     try {
-      if (req.method === "GET" && path === "/healthz") {
+      // HEAD is answered as GET and Node drops the body on the way out, which is
+      // what the spec asks for: same headers, no payload.
+      const reads = req.method === "GET" || req.method === "HEAD";
+
+      if (reads && path === "/healthz") {
         res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
         res.end("ok");
         return;
       }
-      if (req.method === "GET" && path === "/api/catalog") {
+      if (reads && path === "/api/catalog") {
         json(res, 200, {
           ...describeCatalog(),
           policies: COLD_CHAIN_POLICIES,
@@ -185,13 +199,15 @@ export function createApp() {
         await handleOrder(req, res);
         return;
       }
-      if (req.method === "GET" && (path === "/" || path === "/index.html")) {
+      if (reads && (path === "/" || path === "/index.html")) {
         await handlePage(res);
         return;
       }
       const allowed = METHODS[path];
       if (allowed) {
-        json(res, 405, { error: `use ${allowed} for ${path}` });
+        // Allow is what turns a 405 from "no" into "no, and here is the verb you
+        // want", which is the whole reason this branch is not a 404.
+        json(res, 405, { error: `use ${allowed.join(" or ")} for ${path}` }, { allow: allowed.join(", ") });
         return;
       }
       json(res, 404, { error: `no route for ${req.method} ${path}` });
